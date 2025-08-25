@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, 
-                             QLineEdit, QPushButton, QMessageBox)
+                             QLineEdit, QPushButton, QMessageBox, QLabel)
 from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject
+from PyQt5.QtGui import QFont
 import os
 import asyncio
 import json
@@ -14,14 +15,14 @@ class QADialog(QDialog):
     # 添加日志信号，用于线程安全的日志更新
     log_signal = pyqtSignal(str)
     
-    def __init__(self, pdf_path, base_url, api_key, parent=None):
+    def __init__(self, pdf_path, base_url, api_key, model="gpt-3.5-turbo", parent=None):
         super().__init__(parent)
         self.pdf_path = pdf_path
         self.base_url = base_url
         self.api_key = api_key
+        self.model = model
         self.qa_file = pdf_path.replace('.pdf', '.qa.md')
-        self.summary_file = pdf_path.replace('.pdf', '_summary.json')
-        self.summary_file = pdf_path.replace('.pdf', '_summary.json')
+        self.summary_file = pdf_path.replace('.pdf', '.summary.md')  # 修正摘要文件路径
         self.pdf_reader = PDFReader()
         self.llm_client = None
         # 限制内存中的对话历史长度，保留最近20轮对话（40条消息）
@@ -31,6 +32,7 @@ class QADialog(QDialog):
         self.summary_threshold = 10  # 当对话轮次超过多少次时生成摘要
         
         self.init_ui()
+        self.load_summary()  # 加载文献总结内容
         self.load_qa_history()
         # 连接日志信号到处理槽
         self.log_signal.connect(self._handle_log_signal)
@@ -38,6 +40,22 @@ class QADialog(QDialog):
     def _handle_log_signal(self, message):
         """处理日志信号的槽函数"""
         self.history_display.append(message)
+        
+    def load_summary(self):
+        """加载文献总结内容"""
+        if os.path.exists(self.summary_file):
+            try:
+                with open(self.summary_file, 'r', encoding='utf-8') as f:
+                    summary_content = f.read()
+                # 在对话历史显示区域添加文献总结
+                summary_header = "**文献总结内容**\n\n"
+                self.history_display.append(summary_header)
+                self.history_display.append(summary_content)
+                self.history_display.append("\n---\n")
+            except Exception as e:
+                QMessageBox.warning(self, "警告", f"无法加载文献总结: {str(e)}")
+        else:
+            self.history_display.append("**文献总结内容**\n\n暂无文献总结内容\n\n---\n")
         
     def init_ui(self):
         self.setWindowTitle(f'文献问答: {os.path.basename(self.pdf_path)}')
@@ -64,14 +82,14 @@ class QADialog(QDialog):
         self.setLayout(layout)
         
         # 初始化LLM客户端
-        self.llm_client = LLMClient(self.base_url, self.api_key)
+        self.llm_client = LLMClient(self.base_url, self.api_key, 2048, self.model)
         
     def load_qa_history(self):
         """加载问答历史"""
         if os.path.exists(self.qa_file):
             with open(self.qa_file, 'r', encoding='utf-8') as f:
                 content = f.read()
-                self.history_display.setMarkdown(content)
+                # 不再将历史内容设置为整个内容，而是追加到已有内容后面
                 # 从历史记录中恢复对话历史
                 self._restore_history_from_markdown(content)
                 
@@ -113,7 +131,11 @@ class QADialog(QDialog):
         # 限制历史长度
         if len(self.conversation_history) > self.max_history_length:
             self.conversation_history = self.conversation_history[-self.max_history_length:]
-                
+            
+        # 显示历史对话内容（在总结内容之后）
+        if markdown_content.strip():
+            self.history_display.append(markdown_content)
+        
     def ask_question(self):
         """提问处理"""
         question = self.question_input.text().strip()

@@ -421,6 +421,7 @@ class MainWindow(QMainWindow):
             # 获取LLM配置
             base_url = self.base_url_input.text()
             api_key = self.api_key_input.text()
+            model = self.model_combo.currentText()
             
             if not base_url or not api_key:
                 QMessageBox.warning(self, "警告", "请先配置LLM Base URL和API Key")
@@ -428,7 +429,7 @@ class MainWindow(QMainWindow):
                 
             # 创建并显示问答对话框
             from ui.qa_dialog import QADialog
-            dialog = QADialog(pdf_path, base_url, api_key, self)
+            dialog = QADialog(pdf_path, base_url, api_key, model, self)
             dialog.exec_()
         else:
             QMessageBox.warning(self, "警告", "无法获取文献文件路径")
