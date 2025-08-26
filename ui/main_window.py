@@ -229,6 +229,8 @@ class MainWindow(QMainWindow):
         # 选项
         self.generate_overall_report_check = QCheckBox("生成总报告")
         self.cache_text_check = QCheckBox("保留原始文本缓存")
+        self.stream_output_check = QCheckBox("启用流式输出")
+        self.stream_output_check.setChecked(True)  # 默认启用流式输出
         
         config_layout.addRow("LLM Base URL:", self.base_url_input)
         config_layout.addRow("API Key:", self.api_key_input)
@@ -239,6 +241,7 @@ class MainWindow(QMainWindow):
         config_layout.addRow("API请求间隔:", self.api_delay_spin)
         config_layout.addRow(self.generate_overall_report_check)
         config_layout.addRow(self.cache_text_check)
+        config_layout.addRow(self.stream_output_check)
         
         config_group.setLayout(config_layout)
         main_layout.addWidget(config_group)
@@ -306,6 +309,7 @@ class MainWindow(QMainWindow):
         self.api_delay_spin.setValue(self.config.get('api_request_delay', 0))
         self.generate_overall_report_check.setChecked(self.config.get('generate_overall_report', True))
         self.cache_text_check.setChecked(self.config.get('cache_text', True))
+        self.stream_output_check.setChecked(self.config.get('stream_output', True))
         
     def save_config_from_ui(self):
         """从UI控件保存配置"""
@@ -318,6 +322,7 @@ class MainWindow(QMainWindow):
         self.config['api_request_delay'] = self.api_delay_spin.value()
         self.config['generate_overall_report'] = self.generate_overall_report_check.isChecked()
         self.config['cache_text'] = self.cache_text_check.isChecked()
+        self.config['stream_output'] = self.stream_output_check.isChecked()
         
         self.config_manager.save_config(self.config)
         QMessageBox.information(self, "成功", "配置已保存")
@@ -422,6 +427,7 @@ class MainWindow(QMainWindow):
             base_url = self.base_url_input.text()
             api_key = self.api_key_input.text()
             model = self.model_combo.currentText()
+            stream_output = self.stream_output_check.isChecked()
             
             if not base_url or not api_key:
                 QMessageBox.warning(self, "警告", "请先配置LLM Base URL和API Key")
@@ -429,7 +435,7 @@ class MainWindow(QMainWindow):
                 
             # 创建并显示问答对话框
             from ui.qa_dialog import QADialog
-            dialog = QADialog(pdf_path, base_url, api_key, model, self)
+            dialog = QADialog(pdf_path, base_url, api_key, model, stream_output, self)
             dialog.exec_()
         else:
             QMessageBox.warning(self, "警告", "无法获取文献文件路径")

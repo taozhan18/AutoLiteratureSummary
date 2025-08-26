@@ -1,7 +1,8 @@
 import asyncio
 import sys
 import os
-
+import os
+from openai import OpenAI
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -78,5 +79,21 @@ def main():
 
     asyncio.run(test_api_connection(base_url, api_key, model))
 
+
+
 if __name__ == "__main__":
-    # main()
+
+    client = OpenAI(
+        # 若没有配置环境变量，请用阿里云百炼API Key将下行替换为：api_key="sk-xxx",
+        api_key='sk-b9f70380cd2043ec9ad4e8cd254af298',
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+
+    completion = client.chat.completions.create(
+        model="Moonshot-Kimi-K2-Instruct",
+        messages=[
+            {'role': 'user', 'content': '你是谁'}
+        ]
+    )
+
+    print(completion.choices[0].message.content)

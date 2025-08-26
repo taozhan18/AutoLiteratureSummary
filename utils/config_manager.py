@@ -15,7 +15,8 @@ class ConfigManager:
             "generate_overall_report": True,
             "cache_text": True,
             "folder_path": "",
-            "api_request_delay": 0  # API请求间隔（秒）
+            "api_request_delay": 0,  # API请求间隔（秒）
+            "stream_output": True    # 是否启用流式输出
         }
         
     def load_config(self) -> Dict[str, Any]:

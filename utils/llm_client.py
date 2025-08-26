@@ -7,7 +7,7 @@ from utils.prompt_manager import PromptManager
 
 
 class LLMClient:
-    def __init__(self, base_url: str, api_key: str, max_tokens: int = 2048, model: str = "gpt-3.5-turbo"):
+    def __init__(self, base_url: str, api_key: str, max_tokens: int = 2048, model: str = "gpt-3.5-turbo", stream_output: bool = True):
         """
         初始化LLM客户端
 
@@ -16,6 +16,7 @@ class LLMClient:
             api_key: API密钥
             max_tokens: 最大token数
             model: 要使用的模型名称
+            stream_output: 是否启用流式输出
         """
         self.client = openai.AsyncOpenAI(
             base_url=base_url,
@@ -23,6 +24,7 @@ class LLMClient:
         )
         self.max_tokens = max_tokens
         self.model = model
+        self.stream_output = stream_output
         # 初始化tokenizer
         try:
             self.tokenizer = tiktoken.encoding_for_model(model)
@@ -219,14 +221,33 @@ class LLMClient:
             messages = self._trim_history(messages, max_allowed_tokens)
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=self.max_tokens,
-                temperature=0.7
-            )
+            if self.stream_output:
+                # 流式输出
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=0.7,
+                    stream=True
+                )
 
-            return response.choices[0].message.content
+                full_response = ""
+                async for chunk in response:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        full_response += content
+                
+                return full_response
+            else:
+                # 非流式输出
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=0.7,
+                )
+
+                return response.choices[0].message.content
         except openai.APIError as e:
             raise Exception(f"调用LLM API错误: {str(e)}")
         except openai.AuthenticationError as e:
