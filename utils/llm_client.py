@@ -26,27 +26,60 @@ class LLMClient:
         self.model = model
         self.stream_output = stream_output
         # 初始化tokenizer
+        self.tokenizer = None
         try:
             self.tokenizer = tiktoken.encoding_for_model(model)
         except KeyError:
             # 如果模型不支持，则使用默认的cl100k_base编码
-            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+            try:
+                self.tokenizer = tiktoken.get_encoding("cl100k_base")
+            except Exception:
+                # 如果tiktoken完全不可用（如无网络访问），则设置为None
+                print("警告: 无法初始化tiktoken tokenizer，将使用简单的token估算")
+                self.tokenizer = None
+        except Exception as e:
+            # 其他异常情况（如网络问题）
+            print(f"警告: 初始化tokenizer失败 ({str(e)})，将使用简单的token估算")
+            self.tokenizer = None
 
         # 初始化提示词管理器
         self.prompt_manager = PromptManager()
 
+    def _estimate_tokens_from_text(self, text: str) -> int:
+        """估算文本的token数量"""
+        if self.tokenizer is None:
+            # 如果tokenizer不可用，使用简单的字符数估算
+            return len(text) // 4
+        else:
+            # 使用tokenizer精确计算
+            return len(self.tokenizer.encode(text))
+
     def _count_tokens(self, messages: List[Dict]) -> int:
         """计算消息列表的token数量"""
-        total_tokens = 0
-        for message in messages:
-            # 每条消息都有一定的token开销
-            total_tokens += 4  # 每条消息的基础开销
-            for key, value in message.items():
-                total_tokens += len(self.tokenizer.encode(str(value)))
-                if key == "name":
-                    total_tokens += -1  # name字段的特殊处理
-        total_tokens += 2  # 请求的整体开销
-        return total_tokens
+        if self.tokenizer is None:
+            # 如果tokenizer不可用，使用简单的字符数估算（约4个字符=1个token）
+            total_tokens = 0
+            for message in messages:
+                # 每条消息都有一定的token开销
+                total_tokens += 4  # 每条消息的基础开销
+                for key, value in message.items():
+                    total_tokens += len(str(value)) // 4  # 简单估算：4个字符约等于1个token
+                    if key == "name":
+                        total_tokens += -1  # name字段的特殊处理
+            total_tokens += 2  # 请求的整体开销
+            return total_tokens
+        else:
+            # 使用tokenizer精确计算
+            total_tokens = 0
+            for message in messages:
+                # 每条消息都有一定的token开销
+                total_tokens += 4  # 每条消息的基础开销
+                for key, value in message.items():
+                    total_tokens += len(self.tokenizer.encode(str(value)))
+                    if key == "name":
+                        total_tokens += -1  # name字段的特殊处理
+            total_tokens += 2  # 请求的整体开销
+            return total_tokens
 
     def _trim_history(self, messages: List[Dict], max_allowed_tokens: int) -> List[Dict]:
         """根据最大允许token数修剪对话历史"""
@@ -236,7 +269,7 @@ class LLMClient:
                     if chunk.choices[0].delta.content:
                         content = chunk.choices[0].delta.content
                         full_response += content
-                
+
                 return full_response
             else:
                 # 非流式输出
