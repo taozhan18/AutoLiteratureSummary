@@ -244,6 +244,10 @@ class LLMClient:
                 max_tokens=self.max_tokens,
                 temperature=temperature
             )
+
+            if not response.choices or not response.choices[0].message.content:
+                raise Exception("LLM返回了空响应")
+
             return response.choices[0].message.content
         except openai.APIError as e:
             raise Exception(f"调用LLM API错误: {str(e)}")

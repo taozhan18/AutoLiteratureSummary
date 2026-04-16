@@ -27,6 +27,11 @@ class RecordWorker(QThread):
         self.text_extractor = TextExtractor()
         self.db_manager = DatabaseManager(config.get('db_path', 'literature_records.db'))
         self.llm_client = None
+        self._stop_flag = False
+
+    def stop(self):
+        """请求停止处理"""
+        self._stop_flag = True
 
     def run(self):
         try:
@@ -62,6 +67,10 @@ class RecordWorker(QThread):
             fail_count = 0
 
             for i, (file_path, file_type) in enumerate(all_files):
+                if self._stop_flag:
+                    self.log_signal.emit("批量入库已停止")
+                    break
+
                 try:
                     filename = os.path.basename(file_path)
                     self.log_signal.emit(f"正在处理 [{i+1}/{len(all_files)}]: {filename}")

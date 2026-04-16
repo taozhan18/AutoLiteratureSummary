@@ -419,6 +419,12 @@ class MainWindow(QMainWindow):
             self.log("处理已停止")
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
+        if hasattr(self, 'record_worker') and self.record_worker and self.record_worker.isRunning():
+            self.record_worker.stop()
+            self.record_worker.wait()
+            self.log("批量入库已停止")
+            self.batch_record_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
         
     def refresh_processing(self):
         self.log("强制刷新处理...")
@@ -542,6 +548,7 @@ class MainWindow(QMainWindow):
 
         self.log("开始批量入库...")
         self.batch_record_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
 
         config = {
             'base_url': base_url,
@@ -561,10 +568,12 @@ class MainWindow(QMainWindow):
 
     def batch_record_finished(self, count):
         self.batch_record_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
         self.log(f"批量入库完成，共入库 {count} 条记录")
 
     def batch_record_error(self, error_msg):
         self.batch_record_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
         QMessageBox.critical(self, "错误", f"批量入库过程中发生错误:\n{error_msg}")
         self.log(f"批量入库错误: {error_msg}")
 
