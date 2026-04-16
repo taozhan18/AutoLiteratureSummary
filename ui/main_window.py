@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QListWidgetItem)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from core.processor import LiteratureProcessor
+from core.record_worker import RecordWorker
 from utils.config_manager import ConfigManager
 from utils.llm_client import LLMClient
 
@@ -40,6 +41,11 @@ class ProcessWorker(QThread):
             # 设置API请求间隔
             if 'api_request_delay' in self.config:
                 self.processor.set_api_request_delay(self.config['api_request_delay'])
+
+            # 初始化数据库并启用自动记录
+            if self.config.get('auto_record', False):
+                self.processor.initialize_database()
+                self.processor.enable_auto_record(True)
             
             # 扫描PDF文件
             self.log_signal.emit("正在扫描PDF文件...")
@@ -230,7 +236,8 @@ class MainWindow(QMainWindow):
         self.generate_overall_report_check = QCheckBox("生成总报告")
         self.cache_text_check = QCheckBox("保留原始文本缓存")
         self.stream_output_check = QCheckBox("启用流式输出")
-        self.stream_output_check.setChecked(True)  # 默认启用流式输出
+        self.stream_output_check.setChecked(False)  # 默认关闭流式输出
+        self.auto_record_check = QCheckBox("自动记录到数据库")
         
         config_layout.addRow("LLM Base URL:", self.base_url_input)
         config_layout.addRow("API Key:", self.api_key_input)
@@ -242,6 +249,7 @@ class MainWindow(QMainWindow):
         config_layout.addRow(self.generate_overall_report_check)
         config_layout.addRow(self.cache_text_check)
         config_layout.addRow(self.stream_output_check)
+        config_layout.addRow(self.auto_record_check)
         
         config_group.setLayout(config_layout)
         main_layout.addWidget(config_group)
@@ -296,6 +304,12 @@ class MainWindow(QMainWindow):
         bottom_layout.addWidget(self.regenerate_single_btn)
         bottom_layout.addWidget(self.regenerate_overall_btn)
         bottom_layout.addWidget(self.open_folder_btn)
+        self.batch_record_btn = QPushButton("批量入库")
+        self.batch_record_btn.clicked.connect(self.start_batch_record)
+        self.browse_records_btn = QPushButton("浏览记录")
+        self.browse_records_btn.clicked.connect(self.open_record_browser)
+        bottom_layout.addWidget(self.batch_record_btn)
+        bottom_layout.addWidget(self.browse_records_btn)
         main_layout.addLayout(bottom_layout)
         
     def load_config_to_ui(self):
@@ -309,7 +323,8 @@ class MainWindow(QMainWindow):
         self.api_delay_spin.setValue(self.config.get('api_request_delay', 0))
         self.generate_overall_report_check.setChecked(self.config.get('generate_overall_report', True))
         self.cache_text_check.setChecked(self.config.get('cache_text', True))
-        self.stream_output_check.setChecked(self.config.get('stream_output', True))
+        self.stream_output_check.setChecked(self.config.get('stream_output', False))
+        self.auto_record_check.setChecked(self.config.get('auto_record', True))
         
     def save_config_from_ui(self):
         """从UI控件保存配置"""
@@ -323,6 +338,7 @@ class MainWindow(QMainWindow):
         self.config['generate_overall_report'] = self.generate_overall_report_check.isChecked()
         self.config['cache_text'] = self.cache_text_check.isChecked()
         self.config['stream_output'] = self.stream_output_check.isChecked()
+        self.config['auto_record'] = self.auto_record_check.isChecked()
         
         self.config_manager.save_config(self.config)
         QMessageBox.information(self, "成功", "配置已保存")
@@ -380,7 +396,8 @@ class MainWindow(QMainWindow):
             'concurrency': self.concurrency_spin.value(),
             'max_tokens': self.max_token_spin.value(),
             'generate_overall_report': self.generate_overall_report_check.isChecked(),
-            'cache_text': self.cache_text_check.isChecked()
+            'cache_text': self.cache_text_check.isChecked(),
+            'auto_record': self.auto_record_check.isChecked()
         }
         
         # 保存当前配置
@@ -509,3 +526,50 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "错误", f"无法打开文件夹: {str(e)}")
         else:
             QMessageBox.warning(self, "警告", "无法获取文件路径")
+
+    def start_batch_record(self):
+        """开始批量入库"""
+        folder_path = self.folder_path_input.text().strip()
+        if not folder_path:
+            QMessageBox.warning(self, "警告", "请先选择文件夹路径")
+            return
+
+        base_url = self.base_url_input.text().strip()
+        api_key = self.api_key_input.text().strip()
+        if not base_url or not api_key:
+            QMessageBox.warning(self, "警告", "请先配置 LLM Base URL 和 API Key")
+            return
+
+        self.log("开始批量入库...")
+        self.batch_record_btn.setEnabled(False)
+
+        config = {
+            'base_url': base_url,
+            'api_key': api_key,
+            'model': self.model_combo.currentText(),
+            'max_tokens': self.max_token_spin.value(),
+            'folder_path': folder_path,
+            'api_request_delay': self.api_delay_spin.value(),
+        }
+
+        self.record_worker = RecordWorker(config)
+        self.record_worker.log_signal.connect(self.log)
+        self.record_worker.progress_signal.connect(self.update_progress)
+        self.record_worker.finished_signal.connect(self.batch_record_finished)
+        self.record_worker.error_signal.connect(self.batch_record_error)
+        self.record_worker.start()
+
+    def batch_record_finished(self, count):
+        self.batch_record_btn.setEnabled(True)
+        self.log(f"批量入库完成，共入库 {count} 条记录")
+
+    def batch_record_error(self, error_msg):
+        self.batch_record_btn.setEnabled(True)
+        QMessageBox.critical(self, "错误", f"批量入库过程中发生错误:\n{error_msg}")
+        self.log(f"批量入库错误: {error_msg}")
+
+    def open_record_browser(self):
+        """打开记录浏览对话框"""
+        from ui.record_browser import RecordBrowserDialog
+        dialog = RecordBrowserDialog(parent=self)
+        dialog.exec_()

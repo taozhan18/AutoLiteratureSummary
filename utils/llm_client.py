@@ -219,6 +219,43 @@ class LLMClient:
         except Exception as e:
             raise Exception(f"调用LLM生成总体报告时出错: {str(e)}\n{traceback.format_exc()}")
 
+    async def call_with_prompt_type(self, prompt_type: str, text: str, temperature: float = 0.3) -> str:
+        """
+        通用 LLM 调用方法，按提示词类型名调用
+
+        Args:
+            prompt_type: PromptManager 中的提示词类型名
+            text: 要插入到提示词 {text} 占位符中的文本
+            temperature: 采样温度
+
+        Returns:
+            LLM 响应文本
+        """
+        prompt = self.prompt_manager.get_prompt(prompt_type)
+        formatted = prompt["user"].format(text=text[:self.max_tokens * 4])
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": prompt["system"]},
+                    {"role": "user", "content": formatted}
+                ],
+                max_tokens=self.max_tokens,
+                temperature=temperature
+            )
+            return response.choices[0].message.content
+        except openai.APIError as e:
+            raise Exception(f"调用LLM API错误: {str(e)}")
+        except openai.AuthenticationError as e:
+            raise Exception(f"LLM API认证错误: {str(e)}")
+        except openai.RateLimitError as e:
+            raise Exception(f"LLM API调用频率超限: {str(e)}")
+        except openai.APIConnectionError as e:
+            raise Exception(f"LLM API连接错误: {str(e)}")
+        except Exception as e:
+            raise Exception(f"调用LLM时出错: {str(e)}\n{traceback.format_exc()}")
+
     async def ask_question(self, text: str, question: str, history: List[Dict] = None) -> str:
         """
         针对文献内容回答问题

@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import traceback
+import json
 from typing import List, Dict
 import time
 
@@ -10,6 +11,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.pdf_reader import PDFReader
 from utils.llm_client import LLMClient
+from utils.text_extractor import compute_content_hash
+from utils.database import DatabaseManager
 
 
 class LiteratureProcessor:
@@ -17,6 +20,8 @@ class LiteratureProcessor:
         self.pdf_reader = PDFReader()
         self.llm_client = None
         self.api_request_delay = 0  # API请求间隔（秒）
+        self.db_manager = None
+        self.auto_record_enabled = False
         
     def initialize_llm_client(self, base_url: str, api_key: str, max_tokens: int, model: str = "gpt-3.5-turbo"):
         """初始化LLM客户端"""
@@ -25,6 +30,15 @@ class LiteratureProcessor:
     def set_api_request_delay(self, delay: int):
         """设置API请求间隔"""
         self.api_request_delay = delay
+
+    def initialize_database(self, db_path: str = "literature_records.db"):
+        """初始化数据库管理器"""
+        self.db_manager = DatabaseManager(db_path)
+        self.db_manager.init_db()
+
+    def enable_auto_record(self, enabled: bool = True):
+        """启用或禁用自动记录"""
+        self.auto_record_enabled = enabled
         
     def scan_pdfs(self, folder_path: str) -> List[str]:
         """扫描文件夹中的所有PDF文件"""
@@ -100,6 +114,13 @@ class LiteratureProcessor:
             # 保存摘要
             with open(summary_path, 'w', encoding='utf-8') as f:
                 f.write(summary)
+
+            # 自动记录到数据库
+            if self.auto_record_enabled and self.db_manager:
+                try:
+                    await self._auto_record(pdf_path, text, 'pdf')
+                except Exception as e:
+                    print(f"自动记录失败: {str(e)}")
                 
             return {
                 'pdf_path': pdf_path,
@@ -169,3 +190,77 @@ class LiteratureProcessor:
             f.write(report_with_summaries)
             
         return report_with_summaries
+
+    async def _auto_record(self, file_path: str, text: str, file_type: str):
+        """自动记录文献到数据库"""
+        # 计算内容哈希并检查重复
+        content_hash = compute_content_hash(text)
+        existing = self.db_manager.check_duplicate(content_hash)
+        if existing:
+            print(f"文献已存在于数据库中: {existing.get('title', file_path)}")
+            return
+
+        # LLM 提取元数据
+        raw_json = await self.llm_client.call_with_prompt_type("extract_metadata", text)
+        # 解析 JSON 响应（尝试提取 JSON 部分）
+        metadata = self._parse_metadata_json(raw_json)
+
+        title = metadata.get('title', os.path.basename(file_path))
+        keywords = metadata.get('keywords', '')
+        abstract = metadata.get('abstract', '')
+        is_english = metadata.get('is_english', False)
+
+        # 如果是英文文献，翻译摘要
+        abstract_cn = ''
+        if is_english and abstract:
+            if self.api_request_delay > 0:
+                await asyncio.sleep(self.api_request_delay)
+            abstract_cn = await self.llm_client.call_with_prompt_type("translate_abstract", abstract)
+
+        # 生成中文概要
+        if self.api_request_delay > 0:
+            await asyncio.sleep(self.api_request_delay)
+        summary = await self.llm_client.call_with_prompt_type("generate_record_summary", text)
+
+        # 插入数据库
+        record = {
+            'file_path': file_path,
+            'file_type': file_type,
+            'content_hash': content_hash,
+            'title': title,
+            'keywords': keywords,
+            'abstract': abstract,
+            'abstract_cn': abstract_cn,
+            'summary': summary,
+        }
+        self.db_manager.insert_record(record)
+        print(f"已记录到数据库: {title}")
+
+    def _parse_metadata_json(self, raw: str) -> Dict:
+        """解析 LLM 返回的 JSON 元数据"""
+        # 尝试直接解析
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+
+        # 尝试提取 JSON 块（可能被 markdown 代码块包裹）
+        import re
+        json_match = re.search(r'```(?:json)?\s*(.*?)```', raw, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        # 尝试找最外层的 { }
+        brace_match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if brace_match:
+            try:
+                return json.loads(brace_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        # 解析失败，返回空字典
+        print(f"警告: 无法解析元数据JSON: {raw[:200]}")
+        return {}

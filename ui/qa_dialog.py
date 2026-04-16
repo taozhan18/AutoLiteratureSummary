@@ -1,14 +1,5 @@
-from PyQt5.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QTextEdit,
-    QLineEdit,
-    QPushButton,
-    QMessageBox,
-    QLabel,
-    QProgressBar,
-)
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTextEdit,
+                             QLineEdit, QPushButton, QMessageBox, QLabel, QProgressBar)
 from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject, QTimer
 from PyQt5.QtGui import QFont
 import os
@@ -23,7 +14,7 @@ from utils.pdf_reader import PDFReader
 class QADialog(QDialog):
     # 添加日志信号，用于线程安全的日志更新
     log_signal = pyqtSignal(str)
-
+    
     def __init__(self, pdf_path, base_url, api_key, model="gpt-3.5-turbo", stream_output=True, parent=None):
         super().__init__(parent)
         self.pdf_path = pdf_path
@@ -31,8 +22,8 @@ class QADialog(QDialog):
         self.api_key = api_key
         self.model = model
         self.stream_output = stream_output
-        self.qa_file = pdf_path.replace(".pdf", ".qa.md")
-        self.summary_file = pdf_path.replace(".pdf", ".summary.md")  # 修正摘要文件路径
+        self.qa_file = pdf_path.replace('.pdf', '.qa.md')
+        self.summary_file = pdf_path.replace('.pdf', '.summary.md')  # 修正摘要文件路径
         self.pdf_reader = PDFReader()
         self.llm_client = None
         # 限制内存中的对话历史长度，保留最近20轮对话（40条消息）
@@ -40,12 +31,12 @@ class QADialog(QDialog):
         self.conversation_turns = 0  # 对话轮次计数器
         self.max_history_length = 40  # 每轮对话包含用户和助手两条消息
         self.summary_threshold = 10  # 当对话轮次超过多少次时生成摘要
-
+        
         # 添加进度条和定时器相关属性
         self.progress_timer = None
         self.progress_direction = 1  # 1表示向右，-1表示向左
         self.waiting_progress_bar = None
-
+        
         self.init_ui()
         self.load_summary()  # 加载文献总结内容
         self.load_qa_history()
@@ -55,40 +46,40 @@ class QADialog(QDialog):
     def _handle_log_signal(self, message):
         """处理日志信号的槽函数"""
         self.history_display.append(message)
-
+        
     def _update_waiting_progress(self):
         """更新等待进度条的动画效果"""
         if self.waiting_progress_bar:
             current_value = self.waiting_progress_bar.value()
-
+            
             # 如果达到边界，改变方向
             if current_value >= 100:
                 self.progress_direction = -1
             elif current_value <= 0:
                 self.progress_direction = 1
-
+            
             # 更新进度值
             new_value = current_value + (self.progress_direction * 5)
             self.waiting_progress_bar.setValue(new_value)
-
+            
     def _start_waiting_animation(self):
         """开始等待动画"""
         if self.waiting_progress_bar and not self.progress_timer:
             self.waiting_progress_bar.setHidden(False)
             self.waiting_progress_bar.setValue(0)
             self.progress_direction = 1
-
+            
             # 创建定时器，每100毫秒更新一次进度
             self.progress_timer = QTimer()
             self.progress_timer.timeout.connect(self._update_waiting_progress)
             self.progress_timer.start(100)
-
+            
     def _stop_waiting_animation(self):
         """停止等待动画"""
         if self.progress_timer:
             self.progress_timer.stop()
             self.progress_timer = None
-
+            
         if self.waiting_progress_bar:
             self.waiting_progress_bar.setHidden(True)
             self.waiting_progress_bar.setValue(0)
@@ -97,7 +88,7 @@ class QADialog(QDialog):
         """加载文献总结内容"""
         if os.path.exists(self.summary_file):
             try:
-                with open(self.summary_file, "r", encoding="utf-8") as f:
+                with open(self.summary_file, 'r', encoding='utf-8') as f:
                     summary_content = f.read()
                 # 在对话历史显示区域添加文献总结
                 summary_header = "**文献总结内容**\n\n"
@@ -110,7 +101,7 @@ class QADialog(QDialog):
             self.history_display.append("**文献总结内容**\n\n暂无文献总结内容\n\n---\n")
 
     def init_ui(self):
-        self.setWindowTitle(f"文献问答: {os.path.basename(self.pdf_path)}")
+        self.setWindowTitle(f'文献问答: {os.path.basename(self.pdf_path)}')
         self.setGeometry(200, 200, 800, 600)
 
         layout = QVBoxLayout()
@@ -130,7 +121,7 @@ class QADialog(QDialog):
         input_layout.addWidget(self.question_input)
         input_layout.addWidget(ask_button)
         layout.addLayout(input_layout)
-
+        
         # 等待进度条（默认隐藏）
         self.waiting_progress_bar = QProgressBar()
         self.waiting_progress_bar.setRange(0, 100)
@@ -141,14 +132,14 @@ class QADialog(QDialog):
         layout.addWidget(self.waiting_progress_bar)
 
         self.setLayout(layout)
-
+        
         # 初始化LLM客户端
         self.llm_client = LLMClient(self.base_url, self.api_key, 2048, self.model, self.stream_output)
-
+        
     def load_qa_history(self):
         """加载问答历史"""
         if os.path.exists(self.qa_file):
-            with open(self.qa_file, "r", encoding="utf-8") as f:
+            with open(self.qa_file, 'r', encoding='utf-8') as f:
                 content = f.read()
                 # 不再将历史内容设置为整个内容，而是追加到已有内容后面
                 # 从历史记录中恢复对话历史
@@ -156,32 +147,26 @@ class QADialog(QDialog):
 
     def _restore_history_from_markdown(self, markdown_content):
         """从Markdown内容恢复对话历史"""
-        lines = markdown_content.split("\n")
+        lines = markdown_content.split('\n')
         current_role = None
         current_content = ""
         timestamp = ""
 
         for line in lines:
-            if line.startswith("**用户**") or line.startswith("**助手**"):
+            if line.startswith('**用户**') or line.startswith('**助手**'):
                 # 保存前一个条目
                 if current_role and current_content:
-                    self.conversation_history.append(
-                        {
-                            "role": "user" if current_role == "**用户**" else "assistant",
-                            "content": current_content.strip(),
-                        }
-                    )
+                    self.conversation_history.append({
+                        "role": "user" if current_role == "**用户**" else "assistant",
+                        "content": current_content.strip()
+                    })
                 # 解析新的条目
-                current_role = "**用户**" if line.startswith("**用户**") else "**助手**"
+                current_role = "**用户**" if line.startswith('**用户**') else "**助手**"
                 # 提取时间戳
                 try:
-                    timestamp_start = line.find("(") + 1
-                    timestamp_end = line.find(")")
-                    timestamp = (
-                        line[timestamp_start:timestamp_end]
-                        if timestamp_start > 0 and timestamp_end > timestamp_start
-                        else ""
-                    )
+                    timestamp_start = line.find('(') + 1
+                    timestamp_end = line.find(')')
+                    timestamp = line[timestamp_start:timestamp_end] if timestamp_start > 0 and timestamp_end > timestamp_start else ""
                 except:
                     timestamp = ""
                 current_content = ""
@@ -190,13 +175,14 @@ class QADialog(QDialog):
 
         # 保存最后一个条目
         if current_role and current_content:
-            self.conversation_history.append(
-                {"role": "user" if current_role == "**用户**" else "assistant", "content": current_content.strip()}
-            )
+            self.conversation_history.append({
+                "role": "user" if current_role == "**用户**" else "assistant",
+                "content": current_content.strip()
+            })
 
         # 限制历史长度
         if len(self.conversation_history) > self.max_history_length:
-            self.conversation_history = self.conversation_history[-self.max_history_length :]
+            self.conversation_history = self.conversation_history[-self.max_history_length:]
 
         # 显示历史对话内容（在总结内容之后）
         if markdown_content.strip():
@@ -231,7 +217,7 @@ class QADialog(QDialog):
         # 如果是非流式输出，显示等待动画
         if not self.stream_output:
             self._start_waiting_animation()
-
+        
         # 在新线程中运行异步函数，避免阻塞UI
         thread = threading.Thread(target=self._run_async_answer, args=(text, question, timestamp, user_entry))
         thread.start()
@@ -245,7 +231,9 @@ class QADialog(QDialog):
 
             if self.llm_client.stream_output:
                 # 流式输出模式
-                loop.run_until_complete(self._stream_answer(text, question, timestamp))
+                loop.run_until_complete(
+                    self._stream_answer(text, question, timestamp)
+                )
             else:
                 # 非流式输出模式
                 answer = loop.run_until_complete(
@@ -260,7 +248,7 @@ class QADialog(QDialog):
             # 停止等待动画
             if not self.stream_output:
                 self._stop_waiting_animation()
-
+                
             error_entry = f"**错误** ({timestamp}):\n无法获取回答: {str(e)}\n\n"
             # 在主线程中更新UI
             if threading.current_thread() is threading.main_thread():
@@ -277,7 +265,7 @@ class QADialog(QDialog):
             self.history_display.insertPlainText(assistant_header)
         else:
             self.log_signal.emit(assistant_header)
-
+        
         # 获取问答提示词
         qa_prompt = self.llm_client.prompt_manager.get_prompt("question_answer")
 
@@ -290,7 +278,7 @@ class QADialog(QDialog):
             messages.extend(self.conversation_history)
 
         # 添加当前文献内容和问题
-        formatted_user_prompt = qa_prompt["user"].format(text=text[: self.llm_client.max_tokens * 2], question=question)
+        formatted_user_prompt = qa_prompt["user"].format(text=text[:self.llm_client.max_tokens*2], question=question)
         messages.append({"role": "user", "content": formatted_user_prompt})
 
         # 检查并修剪对话历史以适应token限制
@@ -307,9 +295,9 @@ class QADialog(QDialog):
                 messages=messages,
                 max_tokens=self.llm_client.max_tokens,
                 temperature=0.7,
-                stream=True,
+                stream=True
             )
-
+            
             full_response = ""
             async for chunk in response:
                 if chunk.choices[0].delta.content:
@@ -329,13 +317,13 @@ class QADialog(QDialog):
                     else:
                         # 使用信号在主线程中更新UI
                         self.log_signal.emit(content)
-
+            
             # 添加换行和空行（只添加一次）
             if threading.current_thread() is threading.main_thread():
                 self.history_display.insertPlainText("\n\n")
             else:
                 self.log_signal.emit("\n\n")
-
+                
             # 更新对话历史
             self.conversation_history.append({"role": "user", "content": question})
             self.conversation_history.append({"role": "assistant", "content": full_response})
@@ -346,10 +334,10 @@ class QADialog(QDialog):
             # 限制历史长度，防止内存占用过大
             if len(self.conversation_history) > self.max_history_length:
                 # 保留最新的对话历史
-                self.conversation_history = self.conversation_history[-self.max_history_length :]
+                self.conversation_history = self.conversation_history[-self.max_history_length:]
 
             # 如果达到摘要阈值且尚未生成摘要，则生成摘要
-            if self.conversation_turns >= self.summary_threshold and not hasattr(self, "summary_generated"):
+            if self.conversation_turns >= self.summary_threshold and not hasattr(self, 'summary_generated'):
                 self.generate_conversation_summary()
                 self.summary_generated = True
 
@@ -357,14 +345,14 @@ class QADialog(QDialog):
             user_entry = f"**用户** ({timestamp}):\n{question}\n\n"
             answer_entry = f"**助手** ({timestamp}):\n{full_response}\n\n"
             self.save_qa_entry(user_entry + answer_entry)
-
+            
             return full_response
-
+            
         except Exception as e:
             # 停止等待动画
             if not self.stream_output:
                 self._stop_waiting_animation()
-
+                
             error_msg = f"\n\n**错误**: 无法获取回答: {str(e)}\n\n"
             if threading.current_thread() is threading.main_thread():
                 self.history_display.insertPlainText(error_msg)
@@ -377,7 +365,7 @@ class QADialog(QDialog):
         # 停止等待动画
         if not self.stream_output:
             self._stop_waiting_animation()
-
+        
         # 显示回答
         answer_entry = f"**助手** ({timestamp}):\n{answer}\n\n"
         if threading.current_thread() is threading.main_thread():
@@ -386,7 +374,7 @@ class QADialog(QDialog):
             self.log_signal.emit(answer_entry)
 
         # 更新对话历史 - 使用与LLM一致的格式
-        user_question = user_entry.split("\n")[1].strip()  # 提取用户问题
+        user_question = user_entry.split('\n')[1].strip()  # 提取用户问题
         self.conversation_history.append({"role": "user", "content": user_question})
         self.conversation_history.append({"role": "assistant", "content": answer})
 
@@ -396,10 +384,10 @@ class QADialog(QDialog):
         # 限制历史长度，防止内存占用过大
         if len(self.conversation_history) > self.max_history_length:
             # 保留最新的对话历史
-            self.conversation_history = self.conversation_history[-self.max_history_length :]
+            self.conversation_history = self.conversation_history[-self.max_history_length:]
 
         # 如果达到摘要阈值且尚未生成摘要，则生成摘要
-        if self.conversation_turns >= self.summary_threshold and not hasattr(self, "summary_generated"):
+        if self.conversation_turns >= self.summary_threshold and not hasattr(self, 'summary_generated'):
             self.generate_conversation_summary()
             self.summary_generated = True
 
@@ -409,7 +397,7 @@ class QADialog(QDialog):
     def save_qa_entry(self, entry):
         """保存问答记录"""
         try:
-            with open(self.qa_file, "a", encoding="utf-8") as f:
+            with open(self.qa_file, 'a', encoding='utf-8') as f:
                 f.write(entry)
         except Exception as e:
             QMessageBox.warning(self, "警告", f"无法保存问答记录: {str(e)}")
