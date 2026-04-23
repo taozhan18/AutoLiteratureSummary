@@ -105,6 +105,14 @@ class RecordWorker(QThread):
                     keywords = metadata.get('keywords', '')
                     abstract = metadata.get('abstract', '')
                     is_english = metadata.get('is_english', False)
+                    is_academic = metadata.get('is_academic', True)
+                    citation = metadata.get('citation', '')
+
+                    # 过滤非学术文献
+                    if not is_academic:
+                        self.log_signal.emit(f"  跳过: 非学术文献 ({title})")
+                        skip_count += 1
+                        continue
 
                     # 英文文献翻译摘要
                     abstract_cn = ''
@@ -132,6 +140,7 @@ class RecordWorker(QThread):
                         'abstract': abstract,
                         'abstract_cn': abstract_cn,
                         'summary': summary,
+                        'citation': citation,
                     }
                     self.db_manager.insert_record(record)
                     self.log_signal.emit(f"  已入库: {title}")

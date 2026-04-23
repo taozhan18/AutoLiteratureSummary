@@ -209,6 +209,13 @@ class LiteratureProcessor:
         keywords = metadata.get('keywords', '')
         abstract = metadata.get('abstract', '')
         is_english = metadata.get('is_english', False)
+        is_academic = metadata.get('is_academic', True)
+        citation = metadata.get('citation', '')
+
+        # 过滤非学术文献
+        if not is_academic:
+            print(f"跳过非学术文献: {title}")
+            return
 
         # 如果是英文文献，翻译摘要
         abstract_cn = ''
@@ -232,6 +239,7 @@ class LiteratureProcessor:
             'abstract': abstract,
             'abstract_cn': abstract_cn,
             'summary': summary,
+            'citation': citation,
         }
         self.db_manager.insert_record(record)
         print(f"已记录到数据库: {title}")

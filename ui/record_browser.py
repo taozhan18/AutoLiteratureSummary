@@ -53,14 +53,15 @@ class RecordBrowserDialog(QDialog):
 
         # 记录表格
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["ID", "标题", "关键词", "文件类型", "文件路径", "记录时间"])
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(["ID", "标题", "关键词", "引用格式", "文件类型", "文件路径", "记录时间"])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
         self.table.setColumnWidth(0, 40)
-        self.table.setColumnWidth(3, 70)
-        self.table.setColumnWidth(5, 140)
+        self.table.setColumnWidth(4, 70)
+        self.table.setColumnWidth(6, 140)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.currentCellChanged.connect(self.show_detail)
@@ -127,28 +128,30 @@ class RecordBrowserDialog(QDialog):
         """切换表格列（普通模式 vs 搜索模式，搜索模式多一列相关性）"""
         self.table.blockSignals(True)
         if normal:
-            self.table.setColumnCount(6)
-            self.table.setHorizontalHeaderLabels(
-                ["ID", "标题", "关键词", "文件类型", "文件路径", "记录时间"]
-            )
-            self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-            self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-            self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
-            self.table.setColumnWidth(0, 40)
-            self.table.setColumnWidth(3, 70)
-            self.table.setColumnWidth(5, 140)
-        else:
             self.table.setColumnCount(7)
             self.table.setHorizontalHeaderLabels(
-                ["ID", "标题", "关键词", "相关性", "文件类型", "文件路径", "记录时间"]
+                ["ID", "标题", "关键词", "引用格式", "文件类型", "文件路径", "记录时间"]
             )
             self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
             self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+            self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
             self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
             self.table.setColumnWidth(0, 40)
-            self.table.setColumnWidth(3, 60)
             self.table.setColumnWidth(4, 70)
             self.table.setColumnWidth(6, 140)
+        else:
+            self.table.setColumnCount(8)
+            self.table.setHorizontalHeaderLabels(
+                ["ID", "标题", "关键词", "引用格式", "相关性", "文件类型", "文件路径", "记录时间"]
+            )
+            self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+            self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+            self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+            self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Stretch)
+            self.table.setColumnWidth(0, 40)
+            self.table.setColumnWidth(4, 60)
+            self.table.setColumnWidth(5, 70)
+            self.table.setColumnWidth(7, 140)
         self.table.blockSignals(False)
 
     def populate_table(self):
@@ -170,6 +173,10 @@ class RecordBrowserDialog(QDialog):
             self.table.setItem(row, col, QTableWidgetItem(record.get('keywords', '')))
             col += 1
 
+            # 引用格式
+            self.table.setItem(row, col, QTableWidgetItem(record.get('citation', '')))
+            col += 1
+
             if self.is_search_mode:
                 # 相关性分数
                 rank = record.get('rank', 0)
@@ -184,7 +191,7 @@ class RecordBrowserDialog(QDialog):
             self.table.setItem(row, col, type_item)
             col += 1
 
-            # 文件路径（仅显示文件名）
+            # 文件路径
             fpath = record.get('file_path', '')
             self.table.setItem(row, col, QTableWidgetItem(fpath))
             col += 1
@@ -204,6 +211,8 @@ class RecordBrowserDialog(QDialog):
             detail += f"**标题:** {record['title']}\n\n"
         if record.get('keywords'):
             detail += f"**关键词:** {record['keywords']}\n\n"
+        if record.get('citation'):
+            detail += f"**引用格式:** {record['citation']}\n\n"
         if record.get('abstract'):
             detail += f"**摘要:**\n{record['abstract']}\n\n"
         if record.get('abstract_cn'):

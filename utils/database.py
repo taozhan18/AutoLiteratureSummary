@@ -30,6 +30,7 @@ class DatabaseManager:
                     abstract     TEXT,
                     abstract_cn  TEXT,
                     summary      TEXT,
+                    citation     TEXT,
                     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -38,10 +39,16 @@ class DatabaseManager:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_title ON literature_records(title)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_file_type ON literature_records(file_type)")
 
+            # 兼容旧数据库：添加缺失的 citation 列
+            try:
+                conn.execute("ALTER TABLE literature_records ADD COLUMN citation TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+
             # FTS5 全文检索虚拟表（title, keywords, abstract, abstract_cn, summary, file_path）
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS literature_fts USING fts5(
-                    title, keywords, abstract, abstract_cn, summary, file_path,
+                    title, keywords, abstract, abstract_cn, summary, citation, file_path,
                     content='literature_records', content_rowid='id'
                 )
             """)
@@ -49,22 +56,22 @@ class DatabaseManager:
             # 确保同步触发器存在（保持 FTS 索引与主表一致）
             conn.execute("""
                 CREATE TRIGGER IF NOT EXISTS literature_fts_ai AFTER INSERT ON literature_records BEGIN
-                    INSERT INTO literature_fts(rowid, title, keywords, abstract, abstract_cn, summary, file_path)
-                    VALUES (new.id, new.title, new.keywords, new.abstract, new.abstract_cn, new.summary, new.file_path);
+                    INSERT INTO literature_fts(rowid, title, keywords, abstract, abstract_cn, summary, citation, file_path)
+                    VALUES (new.id, new.title, new.keywords, new.abstract, new.abstract_cn, new.summary, new.citation, new.file_path);
                 END
             """)
             conn.execute("""
                 CREATE TRIGGER IF NOT EXISTS literature_fts_ad AFTER DELETE ON literature_records BEGIN
-                    INSERT INTO literature_fts(literature_fts, rowid, title, keywords, abstract, abstract_cn, summary, file_path)
-                    VALUES ('delete', old.id, old.title, old.keywords, old.abstract, old.abstract_cn, old.summary, old.file_path);
+                    INSERT INTO literature_fts(literature_fts, rowid, title, keywords, abstract, abstract_cn, summary, citation, file_path)
+                    VALUES ('delete', old.id, old.title, old.keywords, old.abstract, old.abstract_cn, old.summary, old.citation, old.file_path);
                 END
             """)
             conn.execute("""
                 CREATE TRIGGER IF NOT EXISTS literature_fts_au AFTER UPDATE ON literature_records BEGIN
-                    INSERT INTO literature_fts(literature_fts, rowid, title, keywords, abstract, abstract_cn, summary, file_path)
-                    VALUES ('delete', old.id, old.title, old.keywords, old.abstract, old.abstract_cn, old.summary, old.file_path);
-                    INSERT INTO literature_fts(rowid, title, keywords, abstract, abstract_cn, summary, file_path)
-                    VALUES (new.id, new.title, new.keywords, new.abstract, new.abstract_cn, new.summary, new.file_path);
+                    INSERT INTO literature_fts(literature_fts, rowid, title, keywords, abstract, abstract_cn, summary, citation, file_path)
+                    VALUES ('delete', old.id, old.title, old.keywords, old.abstract, old.abstract_cn, old.summary, old.citation, old.file_path);
+                    INSERT INTO literature_fts(rowid, title, keywords, abstract, abstract_cn, summary, citation, file_path)
+                    VALUES (new.id, new.title, new.keywords, new.abstract, new.abstract_cn, new.summary, new.citation, new.file_path);
                 END
             """)
 
@@ -87,8 +94,8 @@ class DatabaseManager:
             cursor = conn.execute("""
                 INSERT INTO literature_records
                     (file_path, file_type, content_hash, title, keywords,
-                     abstract, abstract_cn, summary)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     abstract, abstract_cn, summary, citation)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 record['file_path'],
                 record['file_type'],
@@ -98,6 +105,7 @@ class DatabaseManager:
                 record.get('abstract', ''),
                 record.get('abstract_cn', ''),
                 record.get('summary', ''),
+                record.get('citation', ''),
             ))
             conn.commit()
             return cursor.lastrowid
@@ -261,7 +269,7 @@ class DatabaseManager:
         ws.title = "文献记录"
 
         # 表头
-        headers = ["ID", "标题", "关键词", "摘要", "中文摘要", "文章概要", "文件类型", "文件路径", "记录时间"]
+        headers = ["ID", "标题", "关键词", "摘要", "中文摘要", "文章概要", "引用格式", "文件类型", "文件路径", "记录时间"]
         header_font = Font(bold=True, size=11)
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
@@ -277,6 +285,7 @@ class DatabaseManager:
                 record.get('abstract', ''),
                 record.get('abstract_cn', ''),
                 record.get('summary', ''),
+                record.get('citation', ''),
                 record.get('file_type', ''),
                 record.get('file_path', ''),
                 record.get('created_at', ''),
@@ -286,7 +295,7 @@ class DatabaseManager:
                 cell.alignment = wrap_alignment
 
         # 设置列宽
-        column_widths = [6, 40, 25, 50, 50, 50, 10, 40, 20]
+        column_widths = [6, 40, 25, 50, 50, 50, 45, 10, 40, 20]
         for col, width in enumerate(column_widths, 1):
             ws.column_dimensions[chr(64 + col)].width = width
 
