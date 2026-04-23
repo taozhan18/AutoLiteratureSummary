@@ -238,7 +238,11 @@ class MainWindow(QMainWindow):
         self.stream_output_check = QCheckBox("启用流式输出")
         self.stream_output_check.setChecked(False)  # 默认关闭流式输出
         self.auto_record_check = QCheckBox("自动记录到数据库")
-        
+        self.process_docx_check = QCheckBox("处理 DOCX 文件")
+        self.process_docx_check.setChecked(True)
+        self.process_md_check = QCheckBox("处理 Markdown 文件")
+        self.process_md_check.setChecked(True)
+
         config_layout.addRow("LLM Base URL:", self.base_url_input)
         config_layout.addRow("API Key:", self.api_key_input)
         config_layout.addRow("模型:", self.model_combo)
@@ -250,6 +254,8 @@ class MainWindow(QMainWindow):
         config_layout.addRow(self.cache_text_check)
         config_layout.addRow(self.stream_output_check)
         config_layout.addRow(self.auto_record_check)
+        config_layout.addRow(self.process_docx_check)
+        config_layout.addRow(self.process_md_check)
         
         config_group.setLayout(config_layout)
         main_layout.addWidget(config_group)
@@ -325,6 +331,8 @@ class MainWindow(QMainWindow):
         self.cache_text_check.setChecked(self.config.get('cache_text', True))
         self.stream_output_check.setChecked(self.config.get('stream_output', False))
         self.auto_record_check.setChecked(self.config.get('auto_record', True))
+        self.process_docx_check.setChecked(self.config.get('process_docx', True))
+        self.process_md_check.setChecked(self.config.get('process_md', True))
         
     def save_config_from_ui(self):
         """从UI控件保存配置"""
@@ -339,6 +347,8 @@ class MainWindow(QMainWindow):
         self.config['cache_text'] = self.cache_text_check.isChecked()
         self.config['stream_output'] = self.stream_output_check.isChecked()
         self.config['auto_record'] = self.auto_record_check.isChecked()
+        self.config['process_docx'] = self.process_docx_check.isChecked()
+        self.config['process_md'] = self.process_md_check.isChecked()
         
         self.config_manager.save_config(self.config)
         QMessageBox.information(self, "成功", "配置已保存")
@@ -557,6 +567,8 @@ class MainWindow(QMainWindow):
             'max_tokens': self.max_token_spin.value(),
             'folder_path': folder_path,
             'api_request_delay': self.api_delay_spin.value(),
+            'process_docx': self.process_docx_check.isChecked(),
+            'process_md': self.process_md_check.isChecked(),
         }
 
         self.record_worker = RecordWorker(config)

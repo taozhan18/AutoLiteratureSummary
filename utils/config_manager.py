@@ -17,7 +17,9 @@ class ConfigManager:
             "folder_path": "",
             "api_request_delay": 0,  # API请求间隔（秒）
             "stream_output": True,   # 是否启用流式输出
-            "auto_record": True      # 自动记录到数据库
+            "auto_record": True,      # 自动记录到数据库
+            "process_docx": True,     # 是否处理 DOCX 文件
+            "process_md": True        # 是否处理 Markdown 文件
         }
         
     def load_config(self) -> Dict[str, Any]:

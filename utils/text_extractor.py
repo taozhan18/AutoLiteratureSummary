@@ -11,14 +11,22 @@ def compute_content_hash(text: str) -> str:
     return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
 
 
-def scan_all_files(folder_path: str) -> List[Tuple[str, str]]:
+def scan_all_files(folder_path: str, enabled_types: List[str] = None) -> List[Tuple[str, str]]:
     """
-    扫描文件夹中所有支持的文件类型（pdf, docx, md）
+    扫描文件夹中所有支持的文件类型
+
+    Args:
+        folder_path: 文件夹路径
+        enabled_types: 要处理的文件类型列表，如 ['pdf', 'md']。默认处理全部（pdf, docx, md）
 
     Returns:
         (file_path, file_type) 元组列表，file_type 为 'pdf'/'docx'/'md'
     """
-    supported = {'.pdf': 'pdf', '.docx': 'docx', '.md': 'md'}
+    all_supported = {'.pdf': 'pdf', '.docx': 'docx', '.md': 'md'}
+    if enabled_types:
+        supported = {ext: ft for ext, ft in all_supported.items() if ft in enabled_types}
+    else:
+        supported = all_supported
     results = []
     for root, dirs, files in os.walk(folder_path):
         for file in files:

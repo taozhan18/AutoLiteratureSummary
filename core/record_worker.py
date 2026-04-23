@@ -49,7 +49,15 @@ class RecordWorker(QThread):
             # 扫描所有支持的文件
             folder_path = self.config['folder_path']
             self.log_signal.emit(f"正在扫描文件夹: {folder_path}")
-            all_files = scan_all_files(folder_path)
+
+            # 根据配置构建要处理的文件类型
+            enabled_types = ['pdf']
+            if self.config.get('process_docx', True):
+                enabled_types.append('docx')
+            if self.config.get('process_md', True):
+                enabled_types.append('md')
+
+            all_files = scan_all_files(folder_path, enabled_types)
 
             if not all_files:
                 self.log_signal.emit("未找到支持的文件（PDF/DOCX/MD）")
