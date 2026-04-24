@@ -37,7 +37,7 @@ class AnthropicClient:
         if system_content:
             payload["system"] = system_content
 
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=120, proxy=None) as client:
             resp = await client.post(
                 f"{self.base_url}/v1/messages",
                 headers=self.headers,
@@ -77,7 +77,10 @@ class LLMClient:
             self.anthropic_client = AnthropicClient(base_url, api_key)
             self.client = None
         else:
-            self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
+            _http_client = httpx.AsyncClient(proxy=None)
+            self.client = openai.AsyncOpenAI(
+                base_url=base_url, api_key=api_key, http_client=_http_client
+            )
             self.anthropic_client = None
         # 初始化tokenizer
         self.tokenizer = None
