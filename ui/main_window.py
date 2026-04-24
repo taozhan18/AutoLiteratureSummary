@@ -593,6 +593,7 @@ class MainWindow(QMainWindow):
             'api_type': self.api_type_combo.currentText(),
             'max_tokens': self.max_token_spin.value(),
             'folder_path': folder_path,
+            'concurrency': self.concurrency_spin.value(),
             'api_request_delay': self.api_delay_spin.value(),
             'process_docx': self.process_docx_check.isChecked(),
             'process_md': self.process_md_check.isChecked(),
