@@ -270,7 +270,7 @@ class RecordBrowserDialog(QDialog):
         if not file_path:
             return
 
-        if file_path == self.db_manager.db_path:
+        if os.path.normpath(os.path.abspath(file_path)) == os.path.normpath(os.path.abspath(self.db_manager.db_path)):
             QMessageBox.warning(self, "警告", "不能选择当前正在使用的数据库")
             return
 
