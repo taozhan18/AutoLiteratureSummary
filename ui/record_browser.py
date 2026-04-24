@@ -81,6 +81,8 @@ class RecordBrowserDialog(QDialog):
         button_layout = QHBoxLayout()
         export_btn = QPushButton("导出 Excel")
         export_btn.clicked.connect(self.export_excel)
+        merge_btn = QPushButton("合并数据库")
+        merge_btn.clicked.connect(self.merge_database)
         delete_btn = QPushButton("删除选中记录")
         delete_btn.clicked.connect(self.delete_selected)
         refresh_btn = QPushButton("刷新")
@@ -89,6 +91,7 @@ class RecordBrowserDialog(QDialog):
         close_btn.clicked.connect(self.accept)
 
         button_layout.addWidget(export_btn)
+        button_layout.addWidget(merge_btn)
         button_layout.addWidget(delete_btn)
         button_layout.addWidget(refresh_btn)
         button_layout.addStretch()
@@ -258,3 +261,29 @@ class RecordBrowserDialog(QDialog):
                 self.load_records()
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"删除失败: {str(e)}")
+
+    def merge_database(self):
+        """选择外部数据库文件并合并到当前数据库"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择要合并的数据库", "", "SQLite 数据库 (*.db *.sqlite *.sqlite3)"
+        )
+        if not file_path:
+            return
+
+        if file_path == self.db_manager.db_path:
+            QMessageBox.warning(self, "警告", "不能选择当前正在使用的数据库")
+            return
+
+        try:
+            result = self.db_manager.merge_database(file_path)
+            total = result['merged'] + result['skipped'] + result['failed']
+            QMessageBox.information(
+                self, "合并完成",
+                f"源数据库共 {total} 条记录\n"
+                f"合并: {result['merged']} 条\n"
+                f"跳过(重复): {result['skipped']} 条\n"
+                f"失败: {result['failed']} 条"
+            )
+            self.load_records()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"合并数据库失败:\n{str(e)}")

@@ -301,3 +301,52 @@ class DatabaseManager:
 
         wb.save(output_path)
         return output_path
+
+    def merge_database(self, source_db_path: str) -> Dict[str, int]:
+        """
+        将外部数据库的记录合并到当前数据库，按 content_hash 自动去重
+
+        Args:
+            source_db_path: 外部数据库文件路径
+
+        Returns:
+            {"merged": 合并数量, "skipped": 跳过数量, "failed": 失败数量}
+        """
+        src_conn = sqlite3.connect(source_db_path)
+        src_conn.row_factory = sqlite3.Row
+        try:
+            src_rows = src_conn.execute(
+                "SELECT * FROM literature_records"
+            ).fetchall()
+        finally:
+            src_conn.close()
+
+        merged, skipped, failed = 0, 0, 0
+        for row in src_rows:
+            record = dict(row)
+            content_hash = record.get('content_hash', '')
+            if not content_hash:
+                failed += 1
+                continue
+
+            if self.check_duplicate(content_hash):
+                skipped += 1
+                continue
+
+            try:
+                self.insert_record({
+                    'file_path': record.get('file_path', ''),
+                    'file_type': record.get('file_type', ''),
+                    'content_hash': content_hash,
+                    'title': record.get('title', ''),
+                    'keywords': record.get('keywords', ''),
+                    'abstract': record.get('abstract', ''),
+                    'abstract_cn': record.get('abstract_cn', ''),
+                    'summary': record.get('summary', ''),
+                    'citation': record.get('citation', ''),
+                })
+                merged += 1
+            except Exception:
+                failed += 1
+
+        return {"merged": merged, "skipped": skipped, "failed": failed}
