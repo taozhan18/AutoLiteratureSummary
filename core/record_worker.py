@@ -40,7 +40,8 @@ class RecordWorker(QThread):
                 self.config['base_url'],
                 self.config['api_key'],
                 self.config.get('max_tokens', 2048),
-                self.config.get('model', 'gpt-3.5-turbo')
+                self.config.get('model', 'gpt-3.5-turbo'),
+                api_type=self.config.get('api_type', 'openai')
             )
 
             # 初始化数据库

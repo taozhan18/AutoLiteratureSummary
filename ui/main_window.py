@@ -35,7 +35,8 @@ class ProcessWorker(QThread):
                 self.config['base_url'],
                 self.config['api_key'],
                 self.config['max_tokens'],
-                self.config['model']
+                self.config['model'],
+                api_type=self.config.get('api_type', 'openai')
             )
             
             # 设置API请求间隔
@@ -121,17 +122,18 @@ class APIConnectionTestWorker(QThread):
     """API连接测试工作线程"""
     log_signal = pyqtSignal(str)
     result_signal = pyqtSignal(bool)
-    
-    def __init__(self, base_url, api_key, model):
+
+    def __init__(self, base_url, api_key, model, api_type="openai"):
         super().__init__()
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
-        
+        self.api_type = api_type
+
     def run(self):
         try:
             self.log_signal.emit("正在测试API连接...")
-            client = LLMClient(self.base_url, self.api_key, model=self.model)
+            client = LLMClient(self.base_url, self.api_key, model=self.model, api_type=self.api_type)
             
             # 在新事件循环中运行异步测试
             loop = asyncio.new_event_loop()
@@ -207,6 +209,11 @@ class MainWindow(QMainWindow):
             "qwen-plus"
         ])
         self.model_combo.setEditable(True)  # 允许用户输入自定义模型
+
+        # API 类型选择
+        self.api_type_combo = QComboBox()
+        self.api_type_combo.addItems(["openai", "anthropic"])
+        self.api_type_combo.currentIndexChanged.connect(self._on_api_type_changed)
         
         # 文件夹路径
         folder_layout = QHBoxLayout()
@@ -245,6 +252,7 @@ class MainWindow(QMainWindow):
 
         config_layout.addRow("LLM Base URL:", self.base_url_input)
         config_layout.addRow("API Key:", self.api_key_input)
+        config_layout.addRow("API 类型:", self.api_type_combo)
         config_layout.addRow("模型:", self.model_combo)
         config_layout.addRow("文件夹路径:", folder_layout)
         config_layout.addRow("并发数:", self.concurrency_spin)
@@ -318,10 +326,25 @@ class MainWindow(QMainWindow):
         bottom_layout.addWidget(self.browse_records_btn)
         main_layout.addLayout(bottom_layout)
         
+    def _on_api_type_changed(self):
+        """切换 API 类型时自动更新模型列表和 Base URL"""
+        api_type = self.api_type_combo.currentText()
+        if api_type == "anthropic":
+            self.base_url_input.setText("https://open.bigmodel.cn/api/anthropic")
+            self.model_combo.clear()
+            self.model_combo.addItems(["glm-5", "glm-4.7", "glm-4-flash", "glm-z1-flash"])
+            self.model_combo.setEditable(True)
+        else:
+            self.base_url_input.setText("https://open.bigmodel.cn/api/paas/v4")
+            self.model_combo.clear()
+            self.model_combo.addItems(["glm-4-flash", "glm-z1-flash"])
+            self.model_combo.setEditable(True)
+
     def load_config_to_ui(self):
         """将配置加载到UI控件"""
         self.base_url_input.setText(self.config.get('base_url', ''))
         self.api_key_input.setText(self.config.get('api_key', ''))
+        self.api_type_combo.setCurrentText(self.config.get('api_type', 'openai'))
         self.model_combo.setCurrentText(self.config.get('model', 'gpt-3.5-turbo'))
         self.folder_path_input.setText(self.config.get('folder_path', ''))
         self.concurrency_spin.setValue(self.config.get('concurrency', 5))
@@ -338,6 +361,7 @@ class MainWindow(QMainWindow):
         """从UI控件保存配置"""
         self.config['base_url'] = self.base_url_input.text()
         self.config['api_key'] = self.api_key_input.text()
+        self.config['api_type'] = self.api_type_combo.currentText()
         self.config['model'] = self.model_combo.currentText()
         self.config['folder_path'] = self.folder_path_input.text()
         self.config['concurrency'] = self.concurrency_spin.value()
@@ -358,16 +382,17 @@ class MainWindow(QMainWindow):
         base_url = self.base_url_input.text().strip()
         api_key = self.api_key_input.text().strip()
         model = self.model_combo.currentText().strip()
-        
+        api_type = self.api_type_combo.currentText()
+
         if not base_url:
             QMessageBox.warning(self, "警告", "请输入LLM Base URL")
             return
-            
+
         self.test_api_btn.setEnabled(False)
         self.test_api_btn.setText("测试中...")
-        
+
         # 启动测试线程
-        self.api_test_worker = APIConnectionTestWorker(base_url, api_key, model)
+        self.api_test_worker = APIConnectionTestWorker(base_url, api_key, model, api_type)
         self.api_test_worker.log_signal.connect(self.log)
         self.api_test_worker.result_signal.connect(self.api_test_finished)
         self.api_test_worker.start()
@@ -402,6 +427,7 @@ class MainWindow(QMainWindow):
             'base_url': self.base_url_input.text(),
             'api_key': self.api_key_input.text(),
             'model': self.model_combo.currentText(),
+            'api_type': self.api_type_combo.currentText(),
             'folder_path': folder_path,
             'concurrency': self.concurrency_spin.value(),
             'max_tokens': self.max_token_spin.value(),
@@ -564,6 +590,7 @@ class MainWindow(QMainWindow):
             'base_url': base_url,
             'api_key': api_key,
             'model': self.model_combo.currentText(),
+            'api_type': self.api_type_combo.currentText(),
             'max_tokens': self.max_token_spin.value(),
             'folder_path': folder_path,
             'api_request_delay': self.api_delay_spin.value(),

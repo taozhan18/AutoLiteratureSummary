@@ -23,9 +23,9 @@ class LiteratureProcessor:
         self.db_manager = None
         self.auto_record_enabled = False
         
-    def initialize_llm_client(self, base_url: str, api_key: str, max_tokens: int, model: str = "gpt-3.5-turbo"):
+    def initialize_llm_client(self, base_url: str, api_key: str, max_tokens: int, model: str = "gpt-3.5-turbo", api_type: str = "openai"):
         """初始化LLM客户端"""
-        self.llm_client = LLMClient(base_url, api_key, max_tokens, model)
+        self.llm_client = LLMClient(base_url, api_key, max_tokens, model, api_type=api_type)
         
     def set_api_request_delay(self, delay: int):
         """设置API请求间隔"""

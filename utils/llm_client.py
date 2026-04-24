@@ -1,4 +1,5 @@
 import openai
+import httpx
 import asyncio
 from typing import List, Dict
 import traceback
@@ -6,8 +7,56 @@ import tiktoken  # 用于计算token数量
 from utils.prompt_manager import PromptManager
 
 
+class AnthropicClient:
+    """Anthropic 兼容 API 客户端（用于智谱 Coding Plan 端点）"""
+
+    def __init__(self, base_url: str, api_key: str):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+
+    async def chat(self, model: str, messages: list, max_tokens: int, temperature: float = 0.3) -> str:
+        system_content = ""
+        chat_messages = []
+        for m in messages:
+            if m["role"] == "system":
+                system_content = m["content"]
+            else:
+                chat_messages.append({"role": m["role"], "content": m["content"]})
+
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": chat_messages,
+        }
+        if system_content:
+            payload["system"] = system_content
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{self.base_url}/v1/messages",
+                headers=self.headers,
+                json=payload,
+            )
+            if resp.status_code != 200:
+                error_text = resp.text[:300]
+                raise Exception(f"Anthropic API HTTP {resp.status_code}: {error_text}")
+            data = resp.json()
+            content = data.get("content", [])
+            if not content:
+                raise Exception("Anthropic API 返回空响应")
+            return content[0].get("text", "")
+
+
 class LLMClient:
-    def __init__(self, base_url: str, api_key: str, max_tokens: int = 2048, model: str = "gpt-3.5-turbo", stream_output: bool = True):
+    def __init__(self, base_url: str, api_key: str, max_tokens: int = 2048,
+                 model: str = "gpt-3.5-turbo", stream_output: bool = True,
+                 api_type: str = "openai"):
         """
         初始化LLM客户端
 
@@ -17,14 +66,19 @@ class LLMClient:
             max_tokens: 最大token数
             model: 要使用的模型名称
             stream_output: 是否启用流式输出
+            api_type: API类型，"openai" 或 "anthropic"
         """
-        self.client = openai.AsyncOpenAI(
-            base_url=base_url,
-            api_key=api_key
-        )
+        self.api_type = api_type
         self.max_tokens = max_tokens
         self.model = model
         self.stream_output = stream_output
+
+        if api_type == "anthropic":
+            self.anthropic_client = AnthropicClient(base_url, api_key)
+            self.client = None
+        else:
+            self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
+            self.anthropic_client = None
         # 初始化tokenizer
         self.tokenizer = None
         try:
@@ -115,6 +169,26 @@ class LLMClient:
 
         return [system_message] + trimmed_history
 
+    async def _chat(self, messages: list, max_tokens: int = None, temperature: float = 0.3) -> str:
+        """统一的聊天接口，自动根据 api_type 选择端点"""
+        if max_tokens is None:
+            max_tokens = self.max_tokens
+
+        if self.api_type == "anthropic":
+            return await self.anthropic_client.chat(
+                self.model, messages, max_tokens, temperature
+            )
+        else:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            if not response.choices or not response.choices[0].message.content:
+                raise Exception("LLM返回了空响应")
+            return response.choices[0].message.content
+
     async def test_connection(self) -> bool:
         """
         测试API连接
@@ -123,17 +197,13 @@ class LLMClient:
             连接是否成功
         """
         try:
-            # 发送一个简单的请求来测试连接
-            response = await self.client.models.list()
-            return True
-        except openai.APIConnectionError as e:
-            print(f"API连接错误: {str(e)}")
-            return False
-        except openai.AuthenticationError as e:
-            print(f"API认证错误: {str(e)}")
-            return False
+            result = await self._chat(
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=10,
+            )
+            return bool(result)
         except Exception as e:
-            print(f"测试连接时发生未知错误: {str(e)}")
+            print(f"测试连接时发生错误: {str(e)}")
             return False
 
     async def generate_summary(self, text: str) -> str:
@@ -152,31 +222,11 @@ class LLMClient:
         prompt = summary_prompt["user"].format(text=text[:self.max_tokens*4])
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": summary_prompt["system"]},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=self.max_tokens,
-                temperature=0.3
-            )
-
-            summary_content = response.choices[0].message.content
-
-            # 检查返回的摘要是否为空
-            if not summary_content or not summary_content.strip():
-                raise Exception("LLM返回的摘要内容为空")
-
-            return summary_content
-        except openai.APIError as e:
-            raise Exception(f"调用LLM API错误: {str(e)}")
-        except openai.AuthenticationError as e:
-            raise Exception(f"LLM API认证错误: {str(e)}")
-        except openai.RateLimitError as e:
-            raise Exception(f"LLM API调用频率超限: {str(e)}")
-        except openai.APIConnectionError as e:
-            raise Exception(f"LLM API连接错误: {str(e)}")
+            messages = [
+                {"role": "system", "content": summary_prompt["system"]},
+                {"role": "user", "content": prompt}
+            ]
+            return await self._chat(messages, temperature=0.3)
         except Exception as e:
             raise Exception(f"调用LLM生成摘要时出错: {str(e)}\n{traceback.format_exc()}")
 
@@ -197,25 +247,11 @@ class LLMClient:
         prompt = report_prompt["user"].format(summaries=combined_summaries)
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": report_prompt["system"]},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=self.max_tokens,
-                temperature=0.3
-            )
-
-            return response.choices[0].message.content
-        except openai.APIError as e:
-            raise Exception(f"调用LLM API错误: {str(e)}")
-        except openai.AuthenticationError as e:
-            raise Exception(f"LLM API认证错误: {str(e)}")
-        except openai.RateLimitError as e:
-            raise Exception(f"LLM API调用频率超限: {str(e)}")
-        except openai.APIConnectionError as e:
-            raise Exception(f"LLM API连接错误: {str(e)}")
+            messages = [
+                {"role": "system", "content": report_prompt["system"]},
+                {"role": "user", "content": prompt}
+            ]
+            return await self._chat(messages, temperature=0.3)
         except Exception as e:
             raise Exception(f"调用LLM生成总体报告时出错: {str(e)}\n{traceback.format_exc()}")
 
@@ -235,28 +271,11 @@ class LLMClient:
         formatted = prompt["user"].format(text=text[:self.max_tokens * 4])
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": prompt["system"]},
-                    {"role": "user", "content": formatted}
-                ],
-                max_tokens=self.max_tokens,
-                temperature=temperature
-            )
-
-            if not response.choices or not response.choices[0].message.content:
-                raise Exception("LLM返回了空响应")
-
-            return response.choices[0].message.content
-        except openai.APIError as e:
-            raise Exception(f"调用LLM API错误: {str(e)}")
-        except openai.AuthenticationError as e:
-            raise Exception(f"LLM API认证错误: {str(e)}")
-        except openai.RateLimitError as e:
-            raise Exception(f"LLM API调用频率超限: {str(e)}")
-        except openai.APIConnectionError as e:
-            raise Exception(f"LLM API连接错误: {str(e)}")
+            messages = [
+                {"role": "system", "content": prompt["system"]},
+                {"role": "user", "content": formatted}
+            ]
+            return await self._chat(messages, temperature=temperature)
         except Exception as e:
             raise Exception(f"调用LLM时出错: {str(e)}\n{traceback.format_exc()}")
 
@@ -295,8 +314,8 @@ class LLMClient:
             messages = self._trim_history(messages, max_allowed_tokens)
 
         try:
-            if self.stream_output:
-                # 流式输出
+            if self.stream_output and self.api_type != "anthropic":
+                # 流式输出（仅 OpenAI 端点支持）
                 response = await self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
@@ -313,22 +332,6 @@ class LLMClient:
 
                 return full_response
             else:
-                # 非流式输出
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=self.max_tokens,
-                    temperature=0.7,
-                )
-
-                return response.choices[0].message.content
-        except openai.APIError as e:
-            raise Exception(f"调用LLM API错误: {str(e)}")
-        except openai.AuthenticationError as e:
-            raise Exception(f"LLM API认证错误: {str(e)}")
-        except openai.RateLimitError as e:
-            raise Exception(f"LLM API调用频率超限: {str(e)}")
-        except openai.APIConnectionError as e:
-            raise Exception(f"LLM API连接错误: {str(e)}")
+                return await self._chat(messages, temperature=0.7)
         except Exception as e:
             raise Exception(f"调用LLM回答问题时出错: {str(e)}\n{traceback.format_exc()}")

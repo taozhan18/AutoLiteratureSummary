@@ -9,6 +9,7 @@ class ConfigManager:
         self.default_config = {
             "base_url": "http://localhost:8000/v1",
             "api_key": "",
+            "api_type": "openai",
             "model": "gpt-3.5-turbo",
             "concurrency": 5,
             "max_tokens": 2048,
