@@ -85,6 +85,8 @@ class RecordBrowserDialog(QDialog):
         export_btn.clicked.connect(self.export_excel)
         merge_btn = QPushButton("合并数据库")
         merge_btn.clicked.connect(self.merge_database)
+        self.update_vec_btn = QPushButton("更新向量")
+        self.update_vec_btn.clicked.connect(self.update_vectors)
         delete_btn = QPushButton("删除选中记录")
         delete_btn.clicked.connect(self.delete_selected)
         refresh_btn = QPushButton("刷新")
@@ -94,6 +96,7 @@ class RecordBrowserDialog(QDialog):
 
         button_layout.addWidget(export_btn)
         button_layout.addWidget(merge_btn)
+        button_layout.addWidget(self.update_vec_btn)
         button_layout.addWidget(delete_btn)
         button_layout.addWidget(refresh_btn)
         button_layout.addStretch()
@@ -303,3 +306,70 @@ class RecordBrowserDialog(QDialog):
             self.load_records()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"合并数据库失败:\n{str(e)}")
+
+    def update_vectors(self):
+        """为缺少向量的记录生成嵌入"""
+        if not self.api_key:
+            QMessageBox.warning(self, "警告", "未配置 API Key，无法生成向量")
+            return
+
+        records = self.db_manager.get_records_without_embeddings()
+        if not records:
+            QMessageBox.information(self, "提示", "所有记录均已有向量，无需更新")
+            return
+
+        reply = QMessageBox.question(
+            self, "更新向量",
+            f"共有 {len(records)} 条记录缺少向量，是否开始生成？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        self.update_vec_btn.setEnabled(False)
+        self.detail_display.clear()
+
+        import asyncio
+        from utils.embedding import EmbeddingClient
+
+        client = EmbeddingClient(self.api_key)
+
+        # 检查 API 是否可用
+        loop = asyncio.new_event_loop()
+        try:
+            available = loop.run_until_complete(client.is_available())
+        except Exception:
+            available = False
+        if not available:
+            loop.close()
+            self.update_vec_btn.setEnabled(True)
+            QMessageBox.warning(self, "警告", "Embedding API 不可用，请检查 API Key 或网络连接")
+            return
+
+        success, fail = 0, 0
+        for i, rec in enumerate(records):
+            title = rec.get('title', '')
+            summary = rec.get('summary', '')
+            embed_text = f"{title} {summary}"[:2000]
+
+            try:
+                vec = loop.run_until_complete(client.embed(embed_text))
+                self.db_manager.store_embedding(rec['id'], vec)
+                success += 1
+                self.detail_display.setMarkdown(
+                    f"**进度:** {i + 1}/{len(records)}  |  成功: {success}  失败: {fail}\n\n"
+                    f"✅ {title}"
+                )
+            except Exception as e:
+                fail += 1
+                self.detail_display.setMarkdown(
+                    f"**进度:** {i + 1}/{len(records)}  |  成功: {success}  失败: {fail}\n\n"
+                    f"❌ {title}: {str(e)}"
+                )
+
+        loop.close()
+        self.update_vec_btn.setEnabled(True)
+        QMessageBox.information(
+            self, "完成",
+            f"向量更新完成\n成功: {success}  失败: {fail}"
+        )

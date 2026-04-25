@@ -378,6 +378,20 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def get_records_without_embeddings(self) -> List[Dict]:
+        """获取没有嵌入向量的记录"""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute("""
+                SELECT r.* FROM literature_records r
+                LEFT JOIN record_vectors v ON r.id = v.record_id
+                WHERE v.record_id IS NULL
+                ORDER BY r.created_at DESC
+            """).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
     def get_all_embeddings(self) -> Dict[int, np.ndarray]:
         """加载所有嵌入向量到内存"""
         conn = self._get_connection()
