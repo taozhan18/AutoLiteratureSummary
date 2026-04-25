@@ -4,15 +4,17 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QHeaderView, QGroupBox, QAbstractItemView)
 from PyQt5.QtCore import Qt
 from utils.database import DatabaseManager
+from utils.embedding import EmbeddingClient
 
 
 class RecordBrowserDialog(QDialog):
     """文献记录浏览对话框"""
 
-    def __init__(self, db_path: str = "literature_records.db", parent=None):
+    def __init__(self, db_path: str = "literature_records.db", api_key: str = "", parent=None):
         super().__init__(parent)
         self.db_manager = DatabaseManager(db_path)
         self.db_manager.init_db()
+        self.api_key = api_key
         self.records = []
         self.is_search_mode = False
         self.init_ui()
@@ -111,13 +113,27 @@ class RecordBrowserDialog(QDialog):
         self.detail_display.clear()
 
     def search_records(self):
-        """使用 FTS5 全文检索"""
+        """混合搜索：FTS5 + 向量检索（API 可用时）"""
         query = self.search_input.text().strip()
         if not query:
             self.load_records()
             return
+
         self.is_search_mode = True
-        self.records = self.db_manager.search_records(query)
+        query_vec = None
+
+        # 尝试生成查询向量（失败则回退纯 FTS5）
+        if self.api_key and self.db_manager.has_embeddings():
+            try:
+                import asyncio
+                client = EmbeddingClient(self.api_key)
+                loop = asyncio.new_event_loop()
+                query_vec = loop.run_until_complete(client.embed(query))
+                loop.close()
+            except Exception:
+                query_vec = None
+
+        self.records = self.db_manager.hybrid_search(query, query_vec)
         self._set_table_columns(normal=False)
         self.populate_table()
 

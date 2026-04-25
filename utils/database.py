@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import struct
+import numpy as np
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -73,6 +75,16 @@ class DatabaseManager:
                     INSERT INTO literature_fts(rowid, title, keywords, abstract, abstract_cn, summary, citation, file_path)
                     VALUES (new.id, new.title, new.keywords, new.abstract, new.abstract_cn, new.summary, new.citation, new.file_path);
                 END
+            """)
+
+            conn.commit()
+
+            # 向量存储表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS record_vectors (
+                    record_id INTEGER PRIMARY KEY REFERENCES literature_records(id) ON DELETE CASCADE,
+                    embedding BLOB NOT NULL
+                )
             """)
 
             conn.commit()
@@ -350,3 +362,130 @@ class DatabaseManager:
                 failed += 1
 
         return {"merged": merged, "skipped": skipped, "failed": failed}
+
+    # ── 向量存储 ──
+
+    def store_embedding(self, record_id: int, vec: np.ndarray):
+        """将嵌入向量存为 BLOB"""
+        blob = struct.pack(f'{len(vec)}f', *vec)
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO record_vectors (record_id, embedding) VALUES (?, ?)",
+                (record_id, blob),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_all_embeddings(self) -> Dict[int, np.ndarray]:
+        """加载所有嵌入向量到内存"""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT record_id, embedding FROM record_vectors"
+            ).fetchall()
+            result = {}
+            for row in rows:
+                vec = np.array(
+                    struct.unpack(f'{len(row["embedding"]) // 4}f', row["embedding"]),
+                    dtype=np.float32,
+                )
+                result[row["record_id"]] = vec
+            return result
+        finally:
+            conn.close()
+
+    def has_embeddings(self) -> bool:
+        """检查是否有任何嵌入向量"""
+        conn = self._get_connection()
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM record_vectors").fetchone()[0]
+            return count > 0
+        finally:
+            conn.close()
+
+    def _vector_search(self, query_vec: np.ndarray, top_k: int = 50) -> List[Dict]:
+        """余弦相似度向量检索，返回 top_k 条 (id, similarity)"""
+        all_vecs = self.get_all_embeddings()
+        if not all_vecs:
+            return []
+
+        # 归一化
+        q_norm = query_vec / (np.linalg.norm(query_vec) + 1e-8)
+        ids = list(all_vecs.keys())
+        mat = np.array([all_vecs[i] for i in ids])
+        mat_norm = mat / (np.linalg.norm(mat, axis=1, keepdims=True) + 1e-8)
+
+        similarities = mat_norm @ q_norm
+        top_indices = np.argsort(similarities)[::-1][:top_k]
+
+        return [
+            {"id": int(ids[i]), "similarity": float(similarities[i])}
+            for i in top_indices
+        ]
+
+    # ── 混合搜索 (FTS5 + 向量) ──
+
+    def hybrid_search(self, query: str, query_vec: np.ndarray = None, top_k: int = 50) -> List[Dict]:
+        """
+        混合搜索：FTS5 + 向量检索，RRF 融合排序
+
+        Args:
+            query: 搜索文本
+            query_vec: 查询文本的嵌入向量，为 None 则仅用 FTS5
+            top_k: 返回结果数量上限
+        """
+        fts_results = self.search_records(query)
+
+        if query_vec is not None and self.has_embeddings():
+            vec_results = self._vector_search(query_vec, top_k)
+            return self._rrf_merge(fts_results, vec_results, top_k)
+
+        return fts_results
+
+    def _rrf_merge(
+        self,
+        fts_results: List[Dict],
+        vec_results: List[Dict],
+        top_k: int = 50,
+        k: int = 60,
+    ) -> List[Dict]:
+        """RRF (Reciprocal Rank Fusion) 合并两路搜索结果"""
+        scores = {}
+
+        for rank, r in enumerate(fts_results):
+            rid = r["id"]
+            scores[rid] = scores.get(rid, 0.0) + 1.0 / (k + rank + 1)
+            # 保留完整记录
+            if "_record" not in scores:
+                pass
+            scores.setdefault(f"_rec_{rid}", r)
+
+        for rank, r in enumerate(vec_results):
+            rid = r["id"]
+            scores[rid] = scores.get(rid, 0.0) + 1.0 / (k + rank + 1)
+
+        # 按融合分数排序
+        sorted_ids = sorted(
+            [rid for rid in scores if isinstance(rid, int)],
+            key=lambda rid: scores[rid],
+            reverse=True,
+        )[:top_k]
+
+        # 取完整记录
+        fts_map = {r["id"]: r for r in fts_results}
+        missing_ids = [rid for rid in sorted_ids if rid not in fts_map]
+        if missing_ids:
+            extra = self.get_records_by_ids(missing_ids)
+            for r in extra:
+                fts_map[r["id"]] = r
+
+        results = []
+        for rid in sorted_ids:
+            rec = fts_map.get(rid)
+            if rec:
+                rec_copy = dict(rec)
+                rec_copy["rank"] = round(scores[rid], 6)
+                results.append(rec_copy)
+        return results

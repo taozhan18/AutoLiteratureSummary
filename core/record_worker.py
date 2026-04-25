@@ -12,6 +12,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from utils.text_extractor import TextExtractor, compute_content_hash, scan_all_files
 from utils.database import DatabaseManager
 from utils.llm_client import LLMClient
+from utils.embedding import EmbeddingClient
 
 
 class RecordWorker(QThread):
@@ -42,6 +43,8 @@ class RecordWorker(QThread):
                 self.config.get('model', 'gpt-3.5-turbo'),
                 api_type=self.config.get('api_type', 'openai')
             )
+
+            self.embedding_client = EmbeddingClient(self.config['api_key'])
 
             self.db_manager.init_db()
 
@@ -165,7 +168,16 @@ class RecordWorker(QThread):
                             'summary': summary,
                             'citation': citation,
                         }
-                        self.db_manager.insert_record(record)
+                        record_id = self.db_manager.insert_record(record)
+
+                    # 生成嵌入向量（失败不影响入库）
+                    try:
+                        embed_text = f"{title} {summary}"[:2000]
+                        vec = await self.embedding_client.embed(embed_text)
+                        async with db_lock:
+                            self.db_manager.store_embedding(record_id, vec)
+                    except Exception:
+                        pass
 
                     self.log_signal.emit(f"  已入库: {title}")
                     success_count += 1

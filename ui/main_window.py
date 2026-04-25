@@ -620,5 +620,6 @@ class MainWindow(QMainWindow):
     def open_record_browser(self):
         """打开记录浏览对话框"""
         from ui.record_browser import RecordBrowserDialog
-        dialog = RecordBrowserDialog(parent=self)
+        api_key = self.api_key_input.text().strip()
+        dialog = RecordBrowserDialog(api_key=api_key, parent=self)
         dialog.exec_()
