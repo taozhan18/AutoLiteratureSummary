@@ -15,6 +15,76 @@ from core.record_worker import RecordWorker
 from utils.config_manager import ConfigManager
 from utils.llm_client import LLMClient
 
+HELP_TEXT = """\
+# 文献智能总结工具 使用说明
+
+## 1. 配置 API
+
+在"配置"区域填写：
+
+- **LLM Base URL**：API 地址，切换"API 类型"会自动填入
+  - `anthropic`：`https://open.bigmodel.cn/api/anthropic`（智谱 Coding Plan，支持 glm-5、glm-4.7 等高级模型）
+  - `openai`：`https://open.bigmodel.cn/api/paas/v4`（标准 OpenAI 兼容接口）
+- **API Key**：智谱 API 密钥
+- **API 类型**：选择 `anthropic` 可解锁更多模型
+- **模型**：填写或选择模型名称
+- **并发数**：批量入库时的并行 API 调用数量（建议 3-5）
+- **最大 Token 数**：单次 API 调用的最大 token 数
+- **API 请求间隔**：每次调用之间的等待秒数（0 为不等待）
+
+点击 **"保存配置"** 保留当前设置。点击 **"测试API连接"** 验证配置是否正确。
+
+## 2. 开始处理（PDF 摘要生成）
+
+1. 点击 **"浏览"** 选择包含文献的文件夹
+2. 勾选需要处理的文件类型（DOCX、Markdown）
+3. 点击 **"开始处理"**
+4. 处理完成后，摘要文件保存在原 PDF 同目录下（`.summary.md` 后缀）
+5. 双击文献列表中的条目可进入问答对话
+
+## 3. 批量入库（推荐）
+
+将文献信息提取并存入本地数据库，支持全文检索：
+
+1. 配置好 API 和文件夹路径
+2. 点击底部 **"批量入库"**
+3. 程序自动：提取文本 → 去重 → LLM 提取元数据 → 过滤非学术文献 → 翻译英文摘要 → 生成中文概要 → 写入数据库
+4. 处理过程中可点击 **"停止"** 中断
+
+## 4. 浏览记录
+
+点击底部 **"浏览记录"** 打开记录浏览窗口：
+
+- **筛选**：按文件类型筛选，或输入关键词搜索
+- **搜索**：支持混合搜索（关键词全文检索 + 语义向量检索），自动选择可用模式
+- **合并数据库**：选择其他 `.db` 文件合并到当前数据库，按内容自动去重
+- **更新向量**：为缺少嵌入向量的记录补生成向量，提升语义搜索质量
+- **导出 Excel**：将当前记录导出为 `.xlsx` 文件
+- **删除选中记录**：删除表格中选中的记录
+
+## 5. 文件类型支持
+
+| 类型 | 扩展名 | 默认启用 |
+|------|--------|----------|
+| PDF  | `.pdf` | 是       |
+| Word | `.docx` | 可选（勾选"处理 DOCX 文件"） |
+| Markdown | `.md` | 可选（勾选"处理 Markdown 文件"） |
+
+## 6. 数据库位置
+
+数据库文件 `literature_records.db` 保存在程序启动目录下。
+
+## 7. 常见问题
+
+**Q: 开着 VPN 无法连接 API？**
+A: 程序会自动尝试绕过系统代理。如仍有问题，请关闭 VPN 后重试。
+
+**Q: 某些模型返回"余额不足"？**
+A: Coding Plan 仅支持部分模型。`anthropic` 端点可用 glm-5、glm-4.7；`openai` 端点可用 glm-4-flash、glm-z1-flash。
+
+**Q: 批量入库时有些文件被跳过？**
+A: 可能原因：文本过短（<100字）、内容重复、或被识别为非学术文献。查看日志了解具体原因。
+"""
 
 class ProcessWorker(QThread):
     # 定义信号
@@ -287,6 +357,10 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.refresh_btn)
         control_layout.addWidget(self.test_api_btn)
         control_layout.addWidget(self.save_config_btn)
+        control_layout.addStretch()
+        help_btn = QPushButton("使用说明")
+        help_btn.clicked.connect(self.show_help)
+        control_layout.addWidget(help_btn)
         main_layout.addLayout(control_layout)
         
         # 进度条
@@ -622,4 +696,20 @@ class MainWindow(QMainWindow):
         from ui.record_browser import RecordBrowserDialog
         api_key = self.api_key_input.text().strip()
         dialog = RecordBrowserDialog(api_key=api_key, parent=self)
+        dialog.exec_()
+
+    def show_help(self):
+        """显示使用说明"""
+        from PyQt5.QtWidgets import QDialog, QTextBrowser
+        dialog = QDialog(self)
+        dialog.setWindowTitle("使用说明")
+        dialog.setGeometry(200, 150, 700, 600)
+        layout = QVBoxLayout(dialog)
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        browser.setMarkdown(HELP_TEXT)
+        layout.addWidget(browser)
+        close = QPushButton("关闭")
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
         dialog.exec_()
